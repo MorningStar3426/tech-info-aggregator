@@ -1,222 +1,84 @@
-# 软件需求规格说明书 (Technical Specification Document)
+# 项目开发规格说明书：智能技术情报聚合平台 v2.0
 
-**项目名称**：基于用户行为反馈的智能科技情报聚合系统
-**版本**：V1.0.0
-**适用对象**：AI 辅助编程工具
-**日期**：2025-12-08
+## 1. 项目概述
 
----
+* **目标**：通过多源爬虫聚合前沿技术资讯，并利用 LLM 生成“每日早报”与“辣评推荐”，帮助用户摆脱信息茧房。
+* **系统特性**：
+  * **幽默/毒舌风格**：AI 输出不再是枯燥摘要，而是人格化点评。
+  * **前后端解耦**：采用 Flask + Bootstrap，自定义 UI/交互。
+  * **多源采集**：掘金多分类、GitHub Trending 多语言、Hacker News。
 
-## 1. 项目概述 (Project Overview)
+## 2. 技术栈
 
-### 1.1 背景
-本项目旨在开发一个智能化的技术资讯聚合平台。区别于传统的关键词检索，本系统利用**网络爬虫**获取多源异构数据，结合**大语言模型 (LLM)** 的语义理解能力，实现内容的自动摘要与清洗。同时，系统构建了**用户行为反馈闭环**，通过记录用户的点击行为，实时调整推荐策略，实现个性化分发。
+| 层级 | 组件 |
+| --- | --- |
+| 后端 | Python 3.9+, Flask, SQLAlchemy, PyMySQL, PyMongo |
+| 前端 | HTML5, CSS3, Bootstrap 5, 原生 ES6 |
+| 爬虫 | Requests, BeautifulSoup4 |
+| AI | OpenAI SDK（ModelScope API 格式，DeepSeek-V3.2） |
+| 数据库 | MySQL（用户/兴趣/日志）、MongoDB（文章池） |
 
-### 1.2 核心功能
-1.  **多源异构数据采集**：自动化抓取掘金 (Juejin)、Hacker News、GitHub Trending 等平台数据。
-2.  **全文解析与清洗**：集成 NLP 工具提取网页正文，去除广告与无关 DOM 元素。
-3.  **混合数据库架构**：采用 MySQL 存储结构化用户行为数据，MongoDB 存储非结构化文章数据。
-4.  **AI 增强推荐引擎**：基于 RAG (Retrieval-Augmented Generation) 思想，利用 LLM 根据用户历史行为生成推荐列表及中文摘要。
-5.  **交互式 Web 界面**：提供可视化操作界面，支持用户标签管理、内容浏览及兴趣反馈。
-
----
-
-## 2. 系统架构设计 (System Architecture)
-
-### 2.1 目录结构规范
-项目文件结构需严格遵守以下规范：
+## 3. 目录结构
 
 ```text
-/project_root
-│── config.py            # 全局配置文件 (API Keys, DB URLs)
-│── database.py          # 数据库连接单例模式封装
-│── crawler.py           # 爬虫与数据清洗核心逻辑
-│── recommender.py       # AI 推荐算法与 LLM 交互逻辑
-│── app.py               # Streamlit 前端主程序
-│── requirements.txt     # 依赖包列表
-└── PROJECT_SPEC.md      # 本文档
+/tech_rec_project
+│── config.py
+│── database.py
+│── db_init.py
+│── crawler.py
+│── recommender.py
+│── server.py
+│── requirements.txt
+│── PROJECT_SPEC.md
+│── templates/
+│   └── index.html
+└── static/
+    ├── css/style.css
+    └── js/main.js
 ```
 
-### 2.2 技术栈要求
-*   **编程语言**: Python 3.9+
-*   **Web 框架**: Streamlit, Streamlit-Extras
-*   **数据存储**:
-    *   Relational DB: MySQL (PyMySQL + SQLAlchemy Core)
-    *   NoSQL DB: MongoDB (PyMongo)
-*   **网络爬虫**: Requests, BeautifulSoup4, Newspaper3k (正文提取)
-*   **人工智能**: OpenAI SDK (兼容 DeepSeek/Moonshot API 格式),python-dotenv
+## 4. 功能模块
 
----
+### 4.1 配置（config.py & .env）
+* 所有敏感信息从 `.env` 通过 `python-dotenv` 加载。
+* ModelScope 兼容配置：
+  * `LLM_BASE_URL = https://api-inference.modelscope.cn/v1`
+  * `LLM_MODEL_NAME = deepseek-ai/DeepSeek-V3.2`
+  * `LLM_API_KEY` 来源于魔搭 Token。
 
-## 3. 数据库设计 (Database Schema)
+### 4.2 爬虫（crawler.py）
+* **掘金分类**：`{'后端': 1, '前端': 6809637767543255054, 'AI': 6809637773935378440, 'Android': 6809635626879549454}`，每类取 Top20。
+* **GitHub Trending**：抓取全站、Python、Java、JavaScript 四个榜单，每榜 Top10。
+* **Hacker News**：Top20 stories。
+* 所有文章存入 MongoDB `articles` 集合，`url` 为去重键，字段包含 `title/url/summary/source/tags/top_image/publish_date`。
 
-### 3.1 MySQL 数据库设计
-**库名**: `tech_rec_db`
-**用途**: 存储用户画像与行为日志。
+### 4.3 AI 引擎（recommender.py）
+* **generate_daily_flash**：从 Mongo 挑选 10 个标题，向 LLM 索要“大家早！”开头的 100 字广播词（含 Emoji）。
+* **recommend_articles**：
+  * 输入：`user_id` + 兴趣标签（若为空则使用 MySQL 中的兴趣）。
+  * 文章筛选：优先匹配标签，不足时回退热门文章，保证非空。
+  * Prompt：系统强调“毒舌、幽默、调皮的大V”，输出 JSON，字段 `title/url/ai_comment/tag_match`，`ai_comment` ≤ 40 字。
+  * 容错：LLM 未配置或异常时使用 fallback（默认推荐语）。
 
-#### 表 1: `users` (用户表)
-| 字段名 | 类型 | 约束 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `user_id` | VARCHAR(50) | PRIMARY KEY | 用户唯一标识 (如 'user_001') |
-| `username` | VARCHAR(50) | NOT NULL | 用户名 |
-| `interests` | TEXT | NULL | JSON 字符串，存储兴趣标签 (如 `["Python", "AI"]`) |
-| `created_at` | TIMESTAMP | DEFAULT NOW() | 创建时间 |
+### 4.4 后端 API（server.py）
+* `GET /`：渲染首页，注入用户列表与可选标签。
+* `GET /api/daily_flash`：返回早报文本。
+* `POST /api/recommend`：接收 `{user_id, interests}`，调用推荐模块返回 JSON 列表。
+* `POST /api/log_action`：记录 `{user_id, url, title, action}` 至 MySQL `user_logs`。
 
-#### 表 2: `user_logs` (行为日志表)
-| 字段名 | 类型 | 约束 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `log_id` | INT | PRIMARY KEY, AUTO_INCREMENT | 自增主键 |
-| `user_id` | VARCHAR(50) | INDEX | 外键关联用户 |
-| `article_title` | VARCHAR(255)| NOT NULL | 文章标题 (用于语义匹配) |
-| `article_url` | TEXT | NOT NULL | 文章链接 |
-| `action_type` | VARCHAR(20) | DEFAULT 'click' | 行为类型 (click, like, dislike) |
-| `log_time` | TIMESTAMP | DEFAULT NOW() | 记录时间 |
+### 4.5 前端（templates/index.html + static/*）
+* **布局**：顶部早报 Hero + 左侧设置（用户选择、兴趣复选框、CTA）+ 右侧三列卡片流。
+* **卡片**：头图（无则占位）、标题、AI 辣评 `<blockquote>`、底部链接+点赞按钮。
+* **交互**：
+  * “每日早报”采用打字机特效（30~50ms/字符 + 闪烁光标）。
+  * “看点有意思的🤓”按钮触发 AJAX，局部刷新卡片。
+  * 点赞按钮调用 `/api/log_action`，使用 Bootstrap Toast 提示。
 
-### 3.2 MongoDB 数据库设计
-**库名**: `tech_crawler`
-**集合**: `articles_pool`
-**用途**: 存储爬取的原始数据及清洗后的全文。
+## 5. 实施步骤
 
-**Document 结构示例**:
-```json
-{
-  "url": "https://...",             // 唯一索引 (Unique Index)
-  "title": "DeepSeek V3 Released",
-  "source": "Hacker News",
-  "publish_date": "2023-12-08",
-  "raw_tags": ["AI", "LLM"],
-  "brief_summary": "...",           // 原始简介
-  "full_text": "...",               // Newspaper3k 提取的纯文本 (截取前3000字符)
-  "top_image": "https://..."        // 文章头图 URL
-}
-```
+1. `db_init.py` 初始化 MySQL 表与 Mongo 索引，配置 `.env`。
+2. 运行 `python crawler.py`，保证 Mongo 数据量 50+。
+3. 实现并验证 AI 模块（`generate_daily_flash`、`recommend_articles`），在无 LLM 情况下确保 fallback。
+4. 编写 Flask `server.py` 与前端资源，联调 `/api/daily_flash`、`/api/recommend`、`/api/log_action`。
+5. 通过 `flask --app server run` 或 `python server.py` 启动系统，确认爬虫/AI/前端联动。
 
----
-
-## 4. 功能模块详细说明 (Functional Specifications)
-
-### 4.1 爬虫模块 (`crawler.py`)
-
-#### 功能需求
-1.  **通用正文提取器 (`fetch_article_content`)**:
-    *   **输入**: URL 字符串。
-    *   **处理**: 使用 `newspaper3k.Article` 下载并解析。
-    *   **异常处理**: 必须包含 try-except 块，处理 403/404/Timeout 错误。
-    *   **输出**: 包含 `text` (截取前3000字符) 和 `top_image` 的字典。若失败返回 None。
-
-2.  **多源采集器 (`run_crawlers`)**:
-    *   **源 A - 掘金后端热榜**:
-        *   API: `https://api.juejin.cn/content_api/v1/content/article_rank?category_id=1&type=hot`
-        *   逻辑: 提取前 10 条数据。
-    *   **源 B - Hacker News Top Stories**:
-        *   API: `https://hacker-news.firebaseio.com/v0/topstories.json` (获取 IDs) -> `https://hacker-news.firebaseio.com/v0/item/{id}.json` (获取详情)。
-        *   逻辑: 获取前 10 条，且必须包含 URL 字段。
-    *   **源 C - GitHub Trending**:
-        *   URL: `https://github.com/trending`
-        *   逻辑: 使用 BeautifulSoup 解析 HTML，提取 `h2 a` (项目名/链接) 和 `p` (描述)。
-
-3.  **数据持久化**:
-    *   获取数据后，立即调用 `fetch_article_content` 补全正文。
-    *   使用 `pymongo.update_one` 的 `upsert=True` 模式存入 MongoDB，以 `url` 为去重键。
-
-### 4.2 推荐算法模块 (`recommender.py`)
-
-#### 功能需求
-1.  **上下文构建**:
-    *   从 MySQL 读取目标用户的 `interests` (JSON Load) 和最近 5 条 `user_logs`。
-    *   从 MongoDB 随机采样 20-30 篇包含 `full_text` 的文章作为候选池。
-
-2.  **LLM 交互逻辑 (ModelScope 适配版)**:
-    *   **Client 初始化**:
-        ```python
-        from openai import OpenAI
-        client = OpenAI(
-            base_url=os.getenv("LLM_BASE_URL"), # 对应魔搭社区 URL
-            api_key=os.getenv("LLM_API_KEY")    # 对应魔搭 Token
-        )
-        ```
-    *   **Prompt 构建**:
-        *   **System**: "You are a tech recommendation engine. Output strictly valid JSON."
-        *   **User**: "Context: {interests}, History: {click_history}. Candidates: {candidates}. ... Return JSON list."
-    *   **API 调用 (关键配置)**:
-        *   调用 `client.chat.completions.create`。
-        *   **Model**: 使用环境变量 `LLM_MODEL_NAME`。
-        *   **Extra Body**: 传入参数 `extra_body={"enable_thinking": False}`。
-            *   *注意*：必须设置为 `False`，防止模型输出“思考过程”导致 JSON 解析失败。
-        *   **Stream**: 设置 `stream=False`。
-            *   *注意*：必须关闭流式输出，我们需要等待完整响应以进行 `json.loads` 解析。
-    *   **解析逻辑**:
-        *   获取 `response.choices[0].message.content`。
-        *   去除 Markdown 代码块标记（如 ```json ... ```）。
-        *   使用 `json.loads` 解析为 Python 列表。
-
-3.  **容错处理**:
-    *   如果 JSON 解析失败，捕获 `json.JSONDecodeError` 并返回空列表或备选数据，防止程序崩溃。
-
-### 4.3 前端交互模块 (`app.py`)
-
-#### 界面规范 (Streamlit)
-1.  **侧边栏 (Settings)**:
-    *   **用户切换**: 下拉框选择 `user_id`。
-    *   **兴趣管理**: `st.multiselect` 组件，允许用户增删兴趣标签。变更时同步更新 MySQL。
-    *   **数据控制**: 提供 "Run Crawler" 按钮，手动触发爬虫更新数据库。
-
-2.  **主内容区 (Feed)**:
-    *   **顶部**: "Refresh Recommendation" 按钮。点击后调用 `recommender.py`。
-    *   **内容流**: 使用 `st.container` 循环展示推荐卡片。
-
-#### 卡片组件设计
-每张文章卡片需包含：
-*   **头图**: `st.image` (若有)。
-*   **标题**: `st.markdown("### Title")`。
-*   **AI 摘要**: 使用引用块 `> Summary` 展示，突出其为 AI 生成。
-*   **操作栏**:
-    *   `[阅读原文]` 链接 (target="_blank")。
-    *   `[👍 感兴趣]` 按钮。
-
-#### 交互逻辑 (关键)
-*   **点击反馈**:
-    *   当用户点击 "👍" 时，**禁止** 使用 `st.rerun()` 刷新全页。
-    *   应直接调用 MySQL 插入函数记录日志。
-    *   使用 `st.toast("已记录偏好")` 进行轻量级提示。
-
----
-
-## 5. 配置与常量 (Configuration)
-
-在 `config.py` 中需要定义以下常量：
-
-```python
-load_dotenv()
-
-# Database Config
-MYSQL_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD'), 
-    'db': os.getenv('DB_NAME', 'tech_rec_db'),
-    'charset': 'utf8mb4'
-}
-MONGO_URI = os.getenv('MONGO_URI')
-
-# LLM Config
-LLM_API_KEY = "你的_ModelScope_Token"
-LLM_BASE_URL = "https://api-inference.modelscope.cn/v1"
-LLM_MODEL_NAME = "deepseek-ai/DeepSeek-V3.2" # 或 "deepseek-ai/DeepSeek-R1"
-
-# Crawler Config
-USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
-```
-
----
-
-## 6. 实施步骤 (Implementation Roadmap)
-
-AI 助手请按以下顺序生成代码并进行验证：
-
-1.  **Phase 1**: 编写 `database.py` 与 `db_init.py`，建立数据库表结构与索引。
-2.  **Phase 2**: 编写 `crawler.py`，测试三个源的数据抓取与 `newspaper3k` 的解析功能，确保 MongoDB 中有数据。
-3.  **Phase 3**: 编写 `recommender.py`，调试 LLM 的 Prompt，确保输出稳定的 JSON 格式。
-4.  **Phase 4**: 编写 `app.py`，整合前后端，调试点击反馈与日志记录功能。
-
----

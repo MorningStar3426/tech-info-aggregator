@@ -50,7 +50,7 @@ def init_mysql():
 
 def init_mongo():
     db = get_mongo_database("tech_crawler")
-    collection = db["articles_pool"]
+    collection = db["articles"]
     collection.create_index("url", unique=True)
 
 
@@ -62,4 +62,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
